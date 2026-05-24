@@ -37,6 +37,8 @@ def test_load_app_config_uses_defaults():
     assert config.operating_window_end == "20:00"
     assert config.daily_digest_time == "19:30"
     assert "commonsense-computing.com/efb.html" in config.url_blocklist
+    assert config.gmail_user == "bumbojavalovernet@gmail.com"
+    assert config.poll_interval_minutes == 30
 
 
 def test_load_app_config_mark_read_true():
@@ -67,3 +69,16 @@ def test_load_app_config_multiline_blocklist():
 def test_load_app_config_missing_required_key_raises():
     with pytest.raises(KeyError):
         load_app_config({})
+
+
+def test_load_app_config_each_required_key_raises_individually():
+    base = {
+        "gmail_client_id": "cid",
+        "gmail_client_secret": "csecret",
+        "gmail_refresh_token": "rtoken",
+        "pdf_output_dir": "/tmp/pdfs",
+    }
+    for key in ("gmail_client_id", "gmail_client_secret", "gmail_refresh_token", "pdf_output_dir"):
+        params = {k: v for k, v in base.items() if k != key}
+        with pytest.raises(KeyError):
+            load_app_config(params)
