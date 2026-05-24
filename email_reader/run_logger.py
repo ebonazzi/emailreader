@@ -9,7 +9,7 @@ log = logging.getLogger(__name__)
 
 
 class RunLogger:
-    def __init__(self, conn: object) -> None:
+    def __init__(self, conn: "psycopg2.extensions.connection") -> None:
         self._conn = conn
         self._run_id: int = insert_run(conn)
         self._processed: int = 0

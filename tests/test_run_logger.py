@@ -64,3 +64,14 @@ def test_run_logger_run_id_property(mock_conn):
     with patch("email_reader.run_logger.insert_run", return_value=42):
         logger = RunLogger(mock_conn)
     assert logger.run_id == 42
+
+
+def test_run_logger_failed_counts_as_both_processed_and_errored(mock_conn):
+    with patch("email_reader.run_logger.insert_run", return_value=3), \
+         patch("email_reader.run_logger.insert_run_message"), \
+         patch("email_reader.run_logger.close_run") as mock_close:
+        logger = RunLogger(mock_conn)
+        logger.log_message("id1", "a@b.com", "Subject", "failed")
+        logger.finish()
+    # A single "failed" message counts as processed=1 AND errored=1
+    mock_close.assert_called_once_with(mock_conn, 3, 1, 1)
