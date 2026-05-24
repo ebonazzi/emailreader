@@ -1,0 +1,9 @@
+[Unit]
+Description=Gmail-to-PDF Email Reader Timer
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=__POLL_INTERVAL__min
+
+[Install]
+WantedBy=timers.target
