@@ -1,3 +1,4 @@
+import psycopg2
 import pytest
 import sys
 from datetime import datetime, timezone
@@ -277,7 +278,7 @@ def test_main_outer_exception_insert_failure_suppressed(mock_main_deps):
     deps["mock_list"].return_value = [_make_message_ref("msg7")]
     deps["mock_exists"].return_value = False
     deps["mock_fetch"].side_effect = RuntimeError("network error")
-    deps["mock_insert"].side_effect = Exception("db down")
+    deps["mock_insert"].side_effect = psycopg2.OperationalError("db down")
 
     # Should not raise despite db insert failure
     _run_main(deps["creds_file"])

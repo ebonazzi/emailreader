@@ -4,6 +4,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import psycopg2
 import pytz
 
 from .config import load_app_config, load_db_credentials, AppConfig
@@ -51,8 +52,8 @@ def make_pdf_filename(sender: str, subject: str, now_utc: datetime, msg_id: str 
     sgt = now_utc.astimezone(_SGT)
     date_str = sgt.strftime("%Y%m%d")
     local_part = sender.split("@")[0] if "@" in sender else sender
-    local_part = re.sub(r"[^\w]", "_", local_part)[:20]
-    slug = re.sub(r"[^\w]", "_", subject.lower())
+    local_part = re.sub(r"\W", "_", local_part)[:20]
+    slug = re.sub(r"\W", "_", subject.lower())
     slug = re.sub(r"_+", "_", slug).strip("_")[:60]
     if not slug:
         slug = "no_subject"
@@ -168,7 +169,7 @@ def main() -> None:
                                 gmail_message_id=msg_id,
                                 sender=sender,
                                 subject=subject,
-                                url=result.url,
+                                url=result.url if result is not None else None,
                                 reason=exc.reason,
                             )
                         )
@@ -180,7 +181,7 @@ def main() -> None:
                     if not message_inserted:
                         try:
                             insert_message(conn, msg_id, sender, subject, _url, None, None, exception=str(exc))
-                        except Exception:
+                        except psycopg2.Error:
                             pass  # don't let insert failure mask the original error
                     failures.append(
                         FailureRecord(
