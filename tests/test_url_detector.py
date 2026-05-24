@@ -85,6 +85,23 @@ def test_inline_cid_images_replaces_src():
     assert "data:image/png;base64," in result
 
 
+def test_inline_cid_images_detects_jpeg_mime():
+    html = '<img src="cid:photo1">'
+    # JPEG magic bytes: \xff\xd8
+    jpeg_data = b'\xff\xd8\xff\xe0' + b'\x00' * 10
+    cid_map = {"photo1": jpeg_data}
+    result = inline_cid_images(html, cid_map)
+    assert "data:image/jpeg;base64," in result
+
+
+def test_inline_cid_images_leaves_unknown_cid_unchanged():
+    html = '<img src="cid:missing"> <img src="cid:present">'
+    cid_map = {"present": b"\x89PNG\r\n\x1a\n"}
+    result = inline_cid_images(html, cid_map)
+    assert "cid:missing" in result
+    assert "data:image/png;base64," in result
+
+
 def test_wrap_html_produces_standalone_document():
     wrapped = wrap_html("<p>Content</p>")
     assert "<!DOCTYPE html>" in wrapped

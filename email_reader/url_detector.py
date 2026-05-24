@@ -1,7 +1,6 @@
 # email_reader/url_detector.py
 import base64
 from dataclasses import dataclass
-from typing import Any
 
 from bs4 import BeautifulSoup
 
@@ -34,14 +33,30 @@ def score_links(html: str, blocklist: list[str]) -> list[tuple[str, str, int]]:
             continue
         anchor = tag.get_text(strip=True)
         results.append((href, anchor, len(anchor)))
+    # Heuristic: longer anchor text is used as a proxy for content relevance.
+    # Use the url_blocklist to exclude known non-content links (e.g. unsubscribe).
     return sorted(results, key=lambda x: x[2], reverse=True)
+
+
+def _detect_image_mime(data: bytes) -> str:
+    """Detect image MIME type from magic bytes."""
+    if data[:4] == b'\x89PNG':
+        return "image/png"
+    if data[:2] == b'\xff\xd8':
+        return "image/jpeg"
+    if data[:6] in (b'GIF87a', b'GIF89a'):
+        return "image/gif"
+    if len(data) >= 12 and data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        return "image/webp"
+    return "image/png"
 
 
 def inline_cid_images(html: str, cid_map: dict[str, bytes]) -> str:
     result = html
     for cid, data in cid_map.items():
         b64 = base64.b64encode(data).decode()
-        data_uri = f"data:image/png;base64,{b64}"
+        mime = _detect_image_mime(data)
+        data_uri = f"data:{mime};base64,{b64}"
         result = result.replace(f"cid:{cid}", data_uri)
     return result
 
