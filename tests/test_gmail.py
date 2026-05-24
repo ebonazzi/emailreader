@@ -7,6 +7,9 @@ from email_reader.gmail import (
     get_header,
     mark_as_read,
     send_email,
+    list_inbox_messages,
+    fetch_message,
+    build_gmail_service,
 )
 
 
@@ -14,7 +17,7 @@ def _encoded(text: str) -> str:
     return base64.urlsafe_b64encode(text.encode()).decode()
 
 
-def make_message(html: str, extra_headers: list = None) -> dict:
+def make_message(html: str, extra_headers: list[dict] | None = None) -> dict:
     headers = [
         {"name": "From", "value": "sender@example.com"},
         {"name": "Subject", "value": "Test Subject"},
@@ -123,6 +126,7 @@ def test_mark_as_read_removes_unread_label():
         id="msg123",
         body={"removeLabelIds": ["UNREAD"]},
     )
+    service.users().messages().modify().execute.assert_called_once()
 
 
 def test_send_email_calls_gmail_api():
@@ -132,3 +136,45 @@ def test_send_email_calls_gmail_api():
     call_kwargs = service.users().messages().send.call_args[1]
     assert call_kwargs["userId"] == "me"
     assert "raw" in call_kwargs["body"]
+    service.users().messages().send().execute.assert_called_once()
+
+
+def test_list_inbox_messages_mark_read_uses_unread_query():
+    service = MagicMock()
+    service.users().messages().list.return_value = MagicMock()
+    service.users().messages().list.return_value.execute.return_value = {"messages": [{"id": "1"}]}
+    service.users().messages().list_next.return_value = None
+    result = list_inbox_messages(service, mark_read=True)
+    call_kwargs = service.users().messages().list.call_args[1]
+    assert "is:unread" in call_kwargs["q"]
+    assert result == [{"id": "1"}]
+
+
+def test_list_inbox_messages_no_mark_read_fetches_all_inbox():
+    service = MagicMock()
+    service.users().messages().list.return_value = MagicMock()
+    service.users().messages().list.return_value.execute.return_value = {"messages": []}
+    service.users().messages().list_next.return_value = None
+    list_inbox_messages(service, mark_read=False)
+    call_kwargs = service.users().messages().list.call_args[1]
+    assert "is:unread" not in call_kwargs["q"]
+    assert call_kwargs["q"] == "in:inbox"
+
+
+def test_fetch_message_uses_full_format():
+    service = MagicMock()
+    service.users().messages().get.return_value.execute.return_value = {"id": "msg1"}
+    result = fetch_message(service, "msg1")
+    call_kwargs = service.users().messages().get.call_args[1]
+    assert call_kwargs["format"] == "full"
+    assert call_kwargs["id"] == "msg1"
+    assert result == {"id": "msg1"}
+
+
+def test_build_gmail_service_raises_on_empty_credentials():
+    with pytest.raises(ValueError, match="non-empty"):
+        build_gmail_service("", "secret", "token")
+    with pytest.raises(ValueError, match="non-empty"):
+        build_gmail_service("cid", "", "token")
+    with pytest.raises(ValueError, match="non-empty"):
+        build_gmail_service("cid", "secret", "")

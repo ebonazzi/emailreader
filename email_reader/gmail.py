@@ -1,9 +1,11 @@
 # email_reader/gmail.py
 import base64
 import logging
+from typing import Any
 from email.mime.text import MIMEText
 
 from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
@@ -11,8 +13,13 @@ log = logging.getLogger(__name__)
 
 _SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
+GmailService = Any  # google.api_core.discovery.Resource
 
-def build_gmail_service(client_id: str, client_secret: str, refresh_token: str):
+
+def build_gmail_service(client_id: str, client_secret: str, refresh_token: str) -> GmailService:
+    if not all([client_id, client_secret, refresh_token]):
+        raise ValueError("client_id, client_secret, and refresh_token must all be non-empty")
+
     creds = Credentials(
         token=None,
         refresh_token=refresh_token,
@@ -21,17 +28,25 @@ def build_gmail_service(client_id: str, client_secret: str, refresh_token: str):
         client_secret=client_secret,
         scopes=_SCOPES,
     )
-    creds.refresh(Request())
+    try:
+        creds.refresh(Request())
+    except RefreshError as exc:
+        raise RuntimeError("Failed to refresh Gmail OAuth token") from exc
     return build("gmail", "v1", credentials=creds)
 
 
-def list_inbox_messages(service, mark_read: bool) -> list[dict]:
+def list_inbox_messages(service: GmailService, mark_read: bool) -> list[dict]:
     query = "in:inbox is:unread" if mark_read else "in:inbox"
-    result = service.users().messages().list(userId="me", q=query).execute()
-    return result.get("messages", [])
+    messages: list[dict] = []
+    request = service.users().messages().list(userId="me", q=query)
+    while request is not None:
+        result = request.execute()
+        messages.extend(result.get("messages", []))
+        request = service.users().messages().list_next(request, result)
+    return messages
 
 
-def fetch_message(service, msg_id: str) -> dict:
+def fetch_message(service: GmailService, msg_id: str) -> dict:
     return (
         service.users()
         .messages()
@@ -93,7 +108,7 @@ def get_header(message: dict, name: str) -> str:
     return ""
 
 
-def mark_as_read(service, msg_id: str) -> None:
+def mark_as_read(service: GmailService, msg_id: str) -> None:
     service.users().messages().modify(
         userId="me",
         id=msg_id,
@@ -101,8 +116,8 @@ def mark_as_read(service, msg_id: str) -> None:
     ).execute()
 
 
-def send_email(service, from_addr: str, to_addr: str, subject: str, body: str) -> None:
-    msg = MIMEText(body)
+def send_email(service: GmailService, from_addr: str, to_addr: str, subject: str, body: str) -> None:
+    msg = MIMEText(body, "plain", "utf-8")
     msg["to"] = to_addr
     msg["from"] = from_addr
     msg["subject"] = subject
