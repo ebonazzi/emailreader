@@ -32,11 +32,12 @@ def test_just_before_operating_window_end():
 
 def test_make_pdf_filename_format():
     now = datetime(2026, 5, 24, 2, 0, 0, tzinfo=timezone.utc)
-    name = make_pdf_filename("newsletter@example.com", "The Future of NATO", now)
+    name = make_pdf_filename("newsletter@example.com", "The Future of NATO", now, "abc12345")
     assert name.startswith("20260524_newsletter_")
     assert name.endswith(".pdf")
     assert "nato" in name
     assert "future" in name
+    assert "abc12345" in name
 
 
 def test_make_pdf_filename_sanitizes_special_characters():
@@ -60,6 +61,7 @@ def test_make_pdf_filename_truncates_long_subject():
 
 def test_make_pdf_filename_empty_subject_uses_fallback():
     now = datetime(2026, 5, 24, 2, 0, 0, tzinfo=timezone.utc)
-    name = make_pdf_filename("user@test.com", "", now)
+    name = make_pdf_filename("user@test.com", "", now, "zz99")
     assert "no_subject" in name
+    assert "zz99" in name
     assert name.endswith(".pdf")

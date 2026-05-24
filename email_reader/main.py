@@ -47,15 +47,17 @@ def is_in_operating_window(config: AppConfig, now_utc: datetime) -> bool:
     return (start_h * 60 + start_m) <= current < (end_h * 60 + end_m)
 
 
-def make_pdf_filename(sender: str, subject: str, now_utc: datetime) -> str:
-    date_str = now_utc.strftime("%Y%m%d")
+def make_pdf_filename(sender: str, subject: str, now_utc: datetime, msg_id: str = "") -> str:
+    sgt = now_utc.astimezone(_SGT)
+    date_str = sgt.strftime("%Y%m%d")
     local_part = sender.split("@")[0] if "@" in sender else sender
     local_part = re.sub(r"[^\w]", "_", local_part)[:20]
     slug = re.sub(r"[^\w]", "_", subject.lower())
     slug = re.sub(r"_+", "_", slug).strip("_")[:60]
     if not slug:
         slug = "no_subject"
-    return f"{date_str}_{local_part}_{slug}.pdf"
+    suffix = f"_{msg_id[:8]}" if msg_id else ""
+    return f"{date_str}_{local_part}_{slug}{suffix}.pdf"
 
 
 def main() -> None:
@@ -132,7 +134,7 @@ def main() -> None:
                             pdf_bytes = renderer.render_html(result.html)
                             disposition = "body_rendered"
 
-                        filename = make_pdf_filename(sender, subject, now_utc)
+                        filename = make_pdf_filename(sender, subject, now_utc, msg_id)
                         pdf_path = str(Path(config.pdf_output_dir) / filename)
                         Path(pdf_path).write_bytes(pdf_bytes)
 

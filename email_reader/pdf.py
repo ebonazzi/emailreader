@@ -64,8 +64,18 @@ class PdfRenderer:
             if bad_statuses:
                 raise RenderError(f"http {bad_statuses[0]}")
 
-            self._check_page_content(page)
-            pdf = page.pdf(format="A4", print_background=True)
+            try:
+                self._check_page_content(page)
+            except RenderError:
+                raise
+            except Exception as exc:
+                raise RenderError(f"page content check failed: {exc}") from exc
+
+            try:
+                pdf = page.pdf(format="A4", print_background=True)
+            except Exception as exc:
+                raise RenderError(f"pdf generation failed: {exc}") from exc
+
             if not pdf:
                 raise RenderError("empty pdf")
             return pdf
@@ -94,7 +104,7 @@ class PdfRenderer:
         has_password = page.locator('input[type="password"]').count() > 0
         if has_password:
             raise RenderError("login form detected")
-        text = page.evaluate("() => document.body.innerText") or ""
+        text = page.evaluate("() => (document.body && document.body.innerText) || ''")  # guard null body
         if len(text.strip()) < self._threshold:
             raise RenderError(
                 f"paywall suspected: only {len(text.strip())} chars visible"
