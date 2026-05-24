@@ -178,3 +178,22 @@ def test_build_gmail_service_raises_on_empty_credentials():
         build_gmail_service("cid", "", "token")
     with pytest.raises(ValueError, match="non-empty"):
         build_gmail_service("cid", "secret", "")
+
+
+def test_list_inbox_messages_paginates_multiple_pages():
+    service = MagicMock()
+    # First page returns one message and a nextPageToken
+    first_request = MagicMock()
+    first_result = {"messages": [{"id": "msg1"}], "nextPageToken": "tok"}
+    first_request.execute.return_value = first_result
+    # Second page returns one message and no nextPageToken
+    second_request = MagicMock()
+    second_result = {"messages": [{"id": "msg2"}]}
+    second_request.execute.return_value = second_result
+    # list_next returns second_request on first call, None on second
+    service.users().messages().list.return_value = first_request
+    service.users().messages().list_next.side_effect = [second_request, None]
+    result = list_inbox_messages(service, mark_read=True)
+    assert len(result) == 2
+    assert result[0]["id"] == "msg1"
+    assert result[1]["id"] == "msg2"
