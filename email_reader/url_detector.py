@@ -1,5 +1,6 @@
 # email_reader/url_detector.py
 import base64
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from bs4 import BeautifulSoup
@@ -17,11 +18,11 @@ def visible_text_length(html: str) -> int:
     return len(soup.get_text(separator=" ", strip=True))
 
 
-def is_blocked(url: str, blocklist: list[str]) -> bool:
+def is_blocked(url: str, blocklist: Sequence[str]) -> bool:
     return any(blocked in url for blocked in blocklist)
 
 
-def score_links(html: str, blocklist: list[str]) -> list[tuple[str, str, int]]:
+def score_links(html: str, blocklist: Sequence[str]) -> list[tuple[str, str, int]]:
     """Return [(href, anchor_text, score), ...] sorted by score descending."""
     soup = BeautifulSoup(html, "lxml")
     results: list[tuple[str, str, int]] = []
@@ -74,7 +75,7 @@ def detect_content(
     html: str,
     cid_map: dict[str, bytes],
     url_detection_threshold: int,
-    blocklist: list[str],
+    blocklist: Sequence[str],
 ) -> ContentResult:
     text_len = visible_text_length(html)
 

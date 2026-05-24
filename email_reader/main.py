@@ -73,6 +73,7 @@ def main() -> None:
     bootstrap_schema(conn)
     params = load_parameters(conn)
     config = load_app_config(params)
+    Path(config.pdf_output_dir).mkdir(parents=True, exist_ok=True)
 
     now_utc = datetime.now(timezone.utc)
 
@@ -86,7 +87,6 @@ def main() -> None:
         sys.exit(0)
 
     run_logger = RunLogger(conn)
-    renderer = PdfRenderer(paywall_text_threshold=config.paywall_text_threshold)
     failures: list[FailureRecord] = []
 
     try:
@@ -95,85 +95,85 @@ def main() -> None:
             config.gmail_client_secret,
             config.gmail_refresh_token,
         )
-        renderer.open()
-        messages = list_inbox_messages(service, config.mark_read)
-        log.info("Found %d messages in inbox", len(messages))
+        with PdfRenderer(paywall_text_threshold=config.paywall_text_threshold) as renderer:
+            messages = list_inbox_messages(service, config.mark_read)
+            log.info("Found %d messages in inbox", len(messages))
 
-        for msg_ref in messages:
-            msg_id = msg_ref["id"]
+            for msg_ref in messages:
+                msg_id = msg_ref["id"]
+                sender: str = "unknown"
+                subject: str = ""
+                result = None
 
-            if message_exists(conn, msg_id):
-                run_logger.log_message(msg_id, "", "", "skipped")
-                log.debug("Skipping already-processed message %s", msg_id)
-                continue
-
-            try:
-                message = fetch_message(service, msg_id)
-                sender = get_header(message, "From")
-                subject = get_header(message, "Subject")
-                html_body, cid_map = extract_body_html(message)
-
-                result = detect_content(
-                    html_body,
-                    cid_map,
-                    config.url_detection_threshold,
-                    config.url_blocklist,
-                )
+                if message_exists(conn, msg_id):
+                    run_logger.log_message(msg_id, "", "", "skipped")
+                    log.debug("Skipping already-processed message %s", msg_id)
+                    continue
 
                 try:
-                    if result.source == "url":
-                        pdf_bytes = renderer.render_url(result.url)
-                        disposition = "url_rendered"
-                    else:
-                        pdf_bytes = renderer.render_html(result.html)
-                        disposition = "body_rendered"
+                    message = fetch_message(service, msg_id)
+                    sender = get_header(message, "From")
+                    subject = get_header(message, "Subject")
+                    html_body, cid_map = extract_body_html(message)
 
-                    filename = make_pdf_filename(sender, subject, now_utc)
-                    pdf_path = str(Path(config.pdf_output_dir) / filename)
-                    Path(pdf_path).write_bytes(pdf_bytes)
+                    result = detect_content(
+                        html_body,
+                        cid_map,
+                        config.url_detection_threshold,
+                        config.url_blocklist,
+                    )
 
-                    insert_message(conn, msg_id, sender, subject,
-                                   result.url, pdf_path, pdf_bytes)
+                    try:
+                        if result.source == "url":
+                            assert result.url is not None, f"detect_content returned url source with None url for {msg_id}"
+                            pdf_bytes = renderer.render_url(result.url)
+                            disposition = "url_rendered"
+                        else:
+                            pdf_bytes = renderer.render_html(result.html)
+                            disposition = "body_rendered"
 
-                    if config.mark_read:
-                        mark_as_read(service, msg_id)
+                        filename = make_pdf_filename(sender, subject, now_utc)
+                        pdf_path = str(Path(config.pdf_output_dir) / filename)
+                        Path(pdf_path).write_bytes(pdf_bytes)
 
-                    run_logger.log_message(msg_id, sender, subject, disposition)
-                    log.info("Processed %s → %s", msg_id, disposition)
+                        insert_message(conn, msg_id, sender, subject,
+                                       result.url, pdf_path, pdf_bytes)
 
-                except RenderError as exc:
+                        if config.mark_read:
+                            mark_as_read(service, msg_id)
+
+                        run_logger.log_message(msg_id, sender, subject, disposition)
+                        log.info("Processed %s → %s", msg_id, disposition)
+
+                    except RenderError as exc:
+                        failures.append(
+                            FailureRecord(
+                                gmail_message_id=msg_id,
+                                sender=sender,
+                                subject=subject,
+                                url=result.url,
+                                reason=exc.reason,
+                            )
+                        )
+                        run_logger.log_message(msg_id, sender, subject, "failed")
+                        log.warning("Failed to render %s: %s", msg_id, exc.reason)
+
+                except Exception as exc:
+                    _url = result.url if result is not None else None
                     failures.append(
                         FailureRecord(
                             gmail_message_id=msg_id,
                             sender=sender,
                             subject=subject,
-                            url=result.url,
-                            reason=exc.reason,
+                            url=_url,
+                            reason=str(exc),
                         )
                     )
                     run_logger.log_message(msg_id, sender, subject, "failed")
-                    log.warning("Failed to render %s: %s", msg_id, exc.reason)
+                    log.warning("Unexpected error processing %s: %s", msg_id, exc, exc_info=True)
 
-            except Exception as exc:
-                _sender = locals().get("sender", "unknown")
-                _subject = locals().get("subject", "unknown")
-                _url = locals().get("result", None)
-                _url = _url.url if _url is not None else None
-                failures.append(
-                    FailureRecord(
-                        gmail_message_id=msg_id,
-                        sender=_sender,
-                        subject=_subject,
-                        url=_url,
-                        reason=str(exc),
-                    )
-                )
-                run_logger.log_message(msg_id, _sender, _subject, "failed")
-                log.warning("Unexpected error processing message %s: %s", msg_id, exc)
-
-        evaluate_and_notify(conn, service, config, failures, now_utc)
+            evaluate_and_notify(conn, service, config, failures, now_utc)
 
     finally:
-        renderer.close()
         run_logger.finish()
         conn.close()

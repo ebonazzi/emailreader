@@ -43,7 +43,17 @@ mkdir -p "$INSTALL_DIR" "$CONF_DIR"
 python3 -m venv "$VENV"
 "$VENV/bin/pip" install --upgrade pip --quiet
 "$VENV/bin/pip" install -e "$REPO_DIR" --quiet
-"$VENV/bin/playwright" install chromium
+
+# Verify system Google Chrome is installed (required; Playwright uses channel="chrome")
+if ! command -v google-chrome &>/dev/null; then
+    echo "ERROR: google-chrome is not installed. Install it first:" >&2
+    echo "  wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add -" >&2
+    echo "  echo 'deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main' > /etc/apt/sources.list.d/google-chrome.list" >&2
+    echo "  apt-get update && apt-get install -y google-chrome-stable" >&2
+    exit 1
+fi
+echo "System Chrome found: $(google-chrome --version)"
+"$VENV/bin/playwright" install-deps chrome
 
 # Install credentials file (owner email-reader, mode 0600)
 install -o email-reader -g email-reader -m 0600 \
