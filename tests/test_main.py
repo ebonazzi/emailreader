@@ -56,3 +56,10 @@ def test_make_pdf_filename_truncates_long_subject():
     parts = name[:-4].split("_", 2)  # strip .pdf, split date_sender_slug
     slug = parts[2]
     assert len(slug) <= 60
+
+
+def test_make_pdf_filename_empty_subject_uses_fallback():
+    now = datetime(2026, 5, 24, 2, 0, 0, tzinfo=timezone.utc)
+    name = make_pdf_filename("user@test.com", "", now)
+    assert "no_subject" in name
+    assert name.endswith(".pdf")

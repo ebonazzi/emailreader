@@ -32,8 +32,11 @@ _SGT = pytz.timezone("Asia/Singapore")
 
 
 def _parse_hhmm(hhmm: str) -> tuple[int, int]:
-    h, m = hhmm.split(":")
-    return int(h), int(m)
+    try:
+        h, m = hhmm.split(":")
+        return int(h), int(m)
+    except ValueError as exc:
+        raise ValueError(f"Invalid HH:MM time {hhmm!r} in config: {exc}") from exc
 
 
 def is_in_operating_window(config: AppConfig, now_utc: datetime) -> bool:
@@ -50,6 +53,8 @@ def make_pdf_filename(sender: str, subject: str, now_utc: datetime) -> str:
     local_part = re.sub(r"[^\w]", "_", local_part)[:20]
     slug = re.sub(r"[^\w]", "_", subject.lower())
     slug = re.sub(r"_+", "_", slug).strip("_")[:60]
+    if not slug:
+        slug = "no_subject"
     return f"{date_str}_{local_part}_{slug}.pdf"
 
 
@@ -102,51 +107,69 @@ def main() -> None:
                 log.debug("Skipping already-processed message %s", msg_id)
                 continue
 
-            message = fetch_message(service, msg_id)
-            sender = get_header(message, "From")
-            subject = get_header(message, "Subject")
-            html_body, cid_map = extract_body_html(message)
-
-            result = detect_content(
-                html_body,
-                cid_map,
-                config.url_detection_threshold,
-                config.url_blocklist,
-            )
-
             try:
-                if result.source == "url":
-                    pdf_bytes = renderer.render_url(result.url)
-                    disposition = "url_rendered"
-                else:
-                    pdf_bytes = renderer.render_html(result.html)
-                    disposition = "body_rendered"
+                message = fetch_message(service, msg_id)
+                sender = get_header(message, "From")
+                subject = get_header(message, "Subject")
+                html_body, cid_map = extract_body_html(message)
 
-                filename = make_pdf_filename(sender, subject, now_utc)
-                pdf_path = str(Path(config.pdf_output_dir) / filename)
-                Path(pdf_path).write_bytes(pdf_bytes)
+                result = detect_content(
+                    html_body,
+                    cid_map,
+                    config.url_detection_threshold,
+                    config.url_blocklist,
+                )
 
-                insert_message(conn, msg_id, sender, subject,
-                               result.url, pdf_path, pdf_bytes)
+                try:
+                    if result.source == "url":
+                        pdf_bytes = renderer.render_url(result.url)
+                        disposition = "url_rendered"
+                    else:
+                        pdf_bytes = renderer.render_html(result.html)
+                        disposition = "body_rendered"
 
-                if config.mark_read:
-                    mark_as_read(service, msg_id)
+                    filename = make_pdf_filename(sender, subject, now_utc)
+                    pdf_path = str(Path(config.pdf_output_dir) / filename)
+                    Path(pdf_path).write_bytes(pdf_bytes)
 
-                run_logger.log_message(msg_id, sender, subject, disposition)
-                log.info("Processed %s → %s", msg_id, disposition)
+                    insert_message(conn, msg_id, sender, subject,
+                                   result.url, pdf_path, pdf_bytes)
 
-            except RenderError as exc:
+                    if config.mark_read:
+                        mark_as_read(service, msg_id)
+
+                    run_logger.log_message(msg_id, sender, subject, disposition)
+                    log.info("Processed %s → %s", msg_id, disposition)
+
+                except RenderError as exc:
+                    failures.append(
+                        FailureRecord(
+                            gmail_message_id=msg_id,
+                            sender=sender,
+                            subject=subject,
+                            url=result.url,
+                            reason=exc.reason,
+                        )
+                    )
+                    run_logger.log_message(msg_id, sender, subject, "failed")
+                    log.warning("Failed to render %s: %s", msg_id, exc.reason)
+
+            except Exception as exc:
+                _sender = locals().get("sender", "unknown")
+                _subject = locals().get("subject", "unknown")
+                _url = locals().get("result", None)
+                _url = _url.url if _url is not None else None
                 failures.append(
                     FailureRecord(
                         gmail_message_id=msg_id,
-                        sender=sender,
-                        subject=subject,
-                        url=result.url,
-                        reason=exc.reason,
+                        sender=_sender,
+                        subject=_subject,
+                        url=_url,
+                        reason=str(exc),
                     )
                 )
-                run_logger.log_message(msg_id, sender, subject, "failed")
-                log.warning("Failed to render %s: %s", msg_id, exc.reason)
+                run_logger.log_message(msg_id, _sender, _subject, "failed")
+                log.warning("Unexpected error processing message %s: %s", msg_id, exc)
 
         evaluate_and_notify(conn, service, config, failures, now_utc)
 
