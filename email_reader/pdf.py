@@ -1,10 +1,10 @@
 # email_reader/pdf.py
 import logging
-from typing import Optional
 
 from playwright.sync_api import (
     Browser,
     Page,
+    Playwright,
     TimeoutError as PlaywrightTimeout,
     sync_playwright,
 )
@@ -21,8 +21,8 @@ class RenderError(Exception):
 class PdfRenderer:
     def __init__(self, paywall_text_threshold: int) -> None:
         self._threshold = paywall_text_threshold
-        self._pw = None
-        self._browser: Optional[Browser] = None
+        self._pw: Playwright | None = None
+        self._browser: Browser | None = None
 
     def open(self) -> None:
         self._pw = sync_playwright().start()
@@ -35,7 +35,16 @@ class PdfRenderer:
         if self._pw:
             self._pw.stop()
 
+    def __enter__(self) -> "PdfRenderer":
+        self.open()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
     def render_url(self, url: str) -> bytes:
+        if self._browser is None:
+            raise RuntimeError("PdfRenderer is not open; call open() first")
         page = self._browser.new_page()
         try:
             bad_statuses: list[int] = []
@@ -50,7 +59,7 @@ class PdfRenderer:
             except PlaywrightTimeout:
                 raise RenderError("timeout")
             except Exception as exc:
-                raise RenderError(f"network error: {exc}")
+                raise RenderError(f"network error: {exc}") from exc
 
             if bad_statuses:
                 raise RenderError(f"http {bad_statuses[0]}")
@@ -64,6 +73,8 @@ class PdfRenderer:
             page.close()
 
     def render_html(self, html: str) -> bytes:
+        if self._browser is None:
+            raise RuntimeError("PdfRenderer is not open; call open() first")
         page = self._browser.new_page()
         try:
             page.set_content(html, wait_until="networkidle")
