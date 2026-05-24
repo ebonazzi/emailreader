@@ -9,6 +9,7 @@ from email_reader.db import (
     insert_run,
     close_run,
     insert_run_message,
+    get_today_failed_messages,
     digest_sent_today,
     insert_notification_log,
 )
@@ -67,12 +68,43 @@ def test_close_run_updates_row(mock_conn):
     conn.commit.assert_called_once()
 
 
+def test_insert_message_inserts_row(mock_conn):
+    conn, cursor = mock_conn
+    insert_message(conn, "msg001", "sender@x.com", "Subject", "https://url.com",
+                   "/tmp/test.pdf", b"%PDF-1.4")
+    cursor.execute.assert_called_once()
+    args = cursor.execute.call_args[0]
+    assert "INSERT INTO messages" in args[0]
+    assert args[1][0] == "msg001"
+    conn.commit.assert_called_once()
+
+
 def test_insert_run_message_inserts_row(mock_conn):
     conn, cursor = mock_conn
     insert_run_message(conn, run_id=1, gmail_message_id="abc", sender="a@b.com",
                        subject="Hello", disposition="url_rendered")
     cursor.execute.assert_called_once()
+    args = cursor.execute.call_args[0]
+    assert args[1] == (1, "abc", "a@b.com", "Hello", "url_rendered")
     conn.commit.assert_called_once()
+
+
+def test_get_today_failed_messages_returns_rows(mock_conn):
+    conn, cursor = mock_conn
+    cursor.fetchall.return_value = [
+        {"gmail_message_id": "id1", "sender": "a@b.com",
+         "subject": "Art", "content_url": "https://x.com"},
+    ]
+    result = get_today_failed_messages(conn, "2026-05-24")
+    assert len(result) == 1
+    assert result[0]["gmail_message_id"] == "id1"
+
+
+def test_get_today_failed_messages_empty(mock_conn):
+    conn, cursor = mock_conn
+    cursor.fetchall.return_value = []
+    result = get_today_failed_messages(conn, "2026-05-24")
+    assert result == []
 
 
 def test_digest_sent_today_true(mock_conn):

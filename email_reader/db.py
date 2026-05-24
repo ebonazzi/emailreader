@@ -1,13 +1,11 @@
 # email_reader/db.py
-from typing import Optional
-
 import psycopg2
 import psycopg2.extras
 
 from .config import DbCredentials
 
 
-def connect(creds: DbCredentials):
+def connect(creds: DbCredentials) -> "psycopg2.extensions.connection":
     return psycopg2.connect(
         host=creds.host,
         port=creds.port,
@@ -17,7 +15,7 @@ def connect(creds: DbCredentials):
     )
 
 
-def bootstrap_schema(conn) -> None:
+def bootstrap_schema(conn: "psycopg2.extensions.connection") -> None:
     with conn.cursor() as cur:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS parameters (
@@ -72,13 +70,13 @@ def bootstrap_schema(conn) -> None:
     conn.commit()
 
 
-def load_parameters(conn) -> dict[str, str]:
+def load_parameters(conn: "psycopg2.extensions.connection") -> dict[str, str]:
     with conn.cursor() as cur:
         cur.execute("SELECT key, value FROM parameters")
         return {row[0]: row[1] for row in cur.fetchall()}
 
 
-def message_exists(conn, gmail_message_id: str) -> bool:
+def message_exists(conn: "psycopg2.extensions.connection", gmail_message_id: str) -> bool:
     with conn.cursor() as cur:
         cur.execute(
             "SELECT 1 FROM messages WHERE gmail_message_id = %s",
@@ -88,11 +86,11 @@ def message_exists(conn, gmail_message_id: str) -> bool:
 
 
 def insert_message(
-    conn,
+    conn: "psycopg2.extensions.connection",
     gmail_message_id: str,
     sender: str,
     subject: str,
-    content_url: Optional[str],
+    content_url: str | None,
     pdf_path: str,
     pdf_data: bytes,
 ) -> None:
@@ -109,15 +107,18 @@ def insert_message(
     conn.commit()
 
 
-def insert_run(conn) -> int:
+def insert_run(conn: "psycopg2.extensions.connection") -> int:
     with conn.cursor() as cur:
         cur.execute("INSERT INTO runs (started_at) VALUES (NOW()) RETURNING id")
-        run_id = cur.fetchone()[0]
+        row = cur.fetchone()
+        if row is None:
+            raise RuntimeError("INSERT INTO runs returned no id")
+        run_id = row[0]
     conn.commit()
     return run_id
 
 
-def close_run(conn, run_id: int, messages_processed: int, messages_errored: int) -> None:
+def close_run(conn: "psycopg2.extensions.connection", run_id: int, messages_processed: int, messages_errored: int) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -133,7 +134,7 @@ def close_run(conn, run_id: int, messages_processed: int, messages_errored: int)
 
 
 def insert_run_message(
-    conn,
+    conn: "psycopg2.extensions.connection",
     run_id: int,
     gmail_message_id: str,
     sender: str,
@@ -152,7 +153,7 @@ def insert_run_message(
     conn.commit()
 
 
-def get_today_failed_messages(conn, today_sgt_date: str) -> list[dict]:
+def get_today_failed_messages(conn: "psycopg2.extensions.connection", today_sgt_date: str) -> list[dict]:
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
@@ -167,7 +168,7 @@ def get_today_failed_messages(conn, today_sgt_date: str) -> list[dict]:
         return [dict(row) for row in cur.fetchall()]
 
 
-def digest_sent_today(conn, today_sgt_date: str) -> bool:
+def digest_sent_today(conn: "psycopg2.extensions.connection", today_sgt_date: str) -> bool:
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -180,7 +181,7 @@ def digest_sent_today(conn, today_sgt_date: str) -> bool:
         return cur.fetchone() is not None
 
 
-def insert_notification_log(conn, notification_type: str, failure_count: int) -> None:
+def insert_notification_log(conn: "psycopg2.extensions.connection", notification_type: str, failure_count: int) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
