@@ -77,6 +77,7 @@ setup.sh             # Deployment script: venv, deps, Playwright browser, system
 | `paywall_text_threshold` | Min rendered visible-text chars before flagging paywall | `200` |
 | `url_blocklist` | Newline-separated URL substrings to never render | `commonsense-computing.com/efb.html` |
 | `poll_interval_minutes` | Run interval (used by setup.sh to write systemd timer) | `30` |
+| `email_failure_send` | When to send failure digest: `hourly` or `daily` | `daily` |
 
 ---
 
@@ -102,6 +103,18 @@ setup.sh             # Deployment script: venv, deps, Playwright browser, system
 | `finished_at`        | TIMESTAMPTZ  | Updated at end of run                                                      |
 | `messages_processed` | INT          | Count of non-skipped messages attempted (successful + failed; not skipped) |
 | `messages_errored`   | INT          | Count of failed messages (subset of `messages_processed`)                  |
+
+---
+
+### `notification_log`
+| Column              | Type         | Notes                                                      |
+|---------------------|--------------|------------------------------------------------------------|
+| `id`                | BIGSERIAL PK |                                                            |
+| `sent_at`           | TIMESTAMPTZ  | When the notification email was actually sent              |
+| `notification_type` | TEXT         | `hourly_failures` or `daily_digest`                        |
+| `failure_count`     | INT          | Number of failed messages covered by this notification     |
+
+Used by the `daily` mode to determine whether today's digest (in Singapore time, UTC+8) has already been sent. The program queries for any `daily_digest` row whose `sent_at` date in SGT matches today before deciding to send.
 
 ---
 
@@ -179,10 +192,20 @@ Example: `20260524_newsletter_the_future_of_nato_supply_chains.pdf`
 
 ## Error Notification (`notifier.py`)
 
-- Accumulates all failed messages during a run.
-- At end of run, if any failures exist: sends **one email** from `bumbojavalovernet@gmail.com` to `eliobonazzi@gmail.com` via the Gmail API.
+Behaviour is controlled by the `email_failure_send` parameter:
+
+**`hourly` mode:**
+- At end of each run, if any failures occurred: send one email immediately from `bumbojavalovernet@gmail.com` to `eliobonazzi@gmail.com` via the Gmail API.
 - Email body lists for each failure: Gmail message ID, sender, subject line, URL (if applicable), failure reason.
-- No email is sent if there are zero failures.
+- Records a `hourly_failures` row in `notification_log`.
+- No email is sent if there are zero failures in that run.
+
+**`daily` mode:**
+- At end of each run, check whether a `daily_digest` notification has already been sent today in Singapore time (UTC+8).
+- If not yet sent **and** the current Singapore local time is ≥ 20:00: collect all `failed` dispositions from `run_messages` whose `processed_at` falls on today's SGT date and have not been covered by a previous `notification_log` entry. Send one digest email listing all of them.
+- Records a `daily_digest` row in `notification_log` with `sent_at` = now and `failure_count` = number of failures included.
+- If the digest window has not yet been reached (before 20:00 SGT), failures are silently accumulated in `run_messages` and will be included in that day's digest.
+- If there are no failures for the day, no email is sent even at 20:00.
 
 ---
 
@@ -232,12 +255,13 @@ WantedBy=timers.target
 
 | Library | Purpose |
 |---------|---------|
-| `playwright` | Headless Chromium rendering |
-| `google-api-python-client` | Gmail REST API |
-| `google-auth` | OAuth2 token refresh |
-| `psycopg2-binary` | PostgreSQL driver |
-| `beautifulsoup4` | HTML parsing for URL/body detection |
-| `lxml` | HTML parser backend for BeautifulSoup |
+| `playwright`               | Headless Chromium rendering              |
+| `google-api-python-client` | Gmail REST API                           |
+| `google-auth`              | OAuth2 token refresh                     |
+| `psycopg2-binary`          | PostgreSQL driver                        |
+| `beautifulsoup4`           | HTML parsing for URL/body detection      |
+| `lxml`                     | HTML parser backend for BeautifulSoup    |
+| `pytz`                     | Singapore timezone (UTC+8) for daily digest window |
 
 ---
 
@@ -247,6 +271,6 @@ WantedBy=timers.target
 - **Chromium reuse:** Browser launched once per run to avoid per-message startup overhead.
 - **PDF in BYTEA:** No size cap; all PDFs stored in full regardless of size.
 - **Dedup by Gmail message ID:** Unique index on `messages.gmail_message_id` ensures idempotency.
-- **One error email per run:** Failures batched into a single notification, not one email per failed message.
+- **Failure notification mode:** `hourly` sends one email per run (if failures exist); `daily` accumulates failures all day and sends one digest at 20:00 Singapore time (UTC+8). Default is `daily`.
 - **Blocklist in DB:** `url_blocklist` parameter contains newline-separated substrings; `commonsense-computing.com/efb.html` is the initial entry.
 - **Poll interval in systemd:** `poll_interval_minutes` is read from DB at deploy time by `setup.sh` and written into the timer unit; not read dynamically at runtime.
