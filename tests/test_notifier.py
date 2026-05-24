@@ -103,3 +103,26 @@ def test_daily_mode_records_no_op_when_no_failures():
         evaluate_and_notify(MagicMock(), MagicMock(), config, [], _PAST_DIGEST)
     mock_send.assert_not_called()
     mock_log.assert_called_once_with(ANY, "daily_digest", 0)
+
+
+def test_parse_hhmm_raises_on_invalid_format():
+    with pytest.raises(ValueError, match="Invalid HH:MM"):
+        _parse_hhmm("1930")
+    with pytest.raises(ValueError, match="Invalid HH:MM"):
+        _parse_hhmm("19:30:00")
+    with pytest.raises(ValueError, match="Invalid HH:MM"):
+        _parse_hhmm("notatime")
+
+
+def test_parse_hhmm_raises_on_out_of_range():
+    with pytest.raises(ValueError, match="Out-of-range"):
+        _parse_hhmm("25:00")
+    with pytest.raises(ValueError, match="Out-of-range"):
+        _parse_hhmm("07:60")
+
+
+def test_unknown_email_failure_send_logs_warning():
+    config = make_config(email_failure_send="weekly")
+    with patch("email_reader.notifier.send_email") as mock_send:
+        evaluate_and_notify(MagicMock(), MagicMock(), config, [], _INSIDE_WINDOW)
+    mock_send.assert_not_called()

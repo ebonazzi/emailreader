@@ -12,6 +12,7 @@ from .gmail import send_email
 log = logging.getLogger(__name__)
 _SGT = pytz.timezone("Asia/Singapore")
 
+# Recipient is fixed per spec; change here if the notification target changes.
 _RECIPIENT = "eliobonazzi@gmail.com"
 
 
@@ -25,8 +26,16 @@ class FailureRecord:
 
 
 def _parse_hhmm(hhmm: str) -> tuple[int, int]:
-    h, m = hhmm.split(":")
-    return int(h), int(m)
+    parts = hhmm.split(":")
+    if len(parts) != 2:
+        raise ValueError(f"Invalid HH:MM value: {hhmm!r}")
+    try:
+        h, m = int(parts[0]), int(parts[1])
+    except ValueError:
+        raise ValueError(f"Invalid HH:MM value: {hhmm!r}") from None
+    if not (0 <= h <= 23 and 0 <= m <= 59):
+        raise ValueError(f"Out-of-range HH:MM value: {hhmm!r}")
+    return h, m
 
 
 def _build_hourly_body(failures: list[FailureRecord]) -> str:
@@ -97,3 +106,9 @@ def evaluate_and_notify(
         )
         insert_notification_log(conn, "daily_digest", len(failures))
         log.info("Sent daily digest: %d failures", len(failures))
+
+    else:
+        log.warning(
+            "Unknown email_failure_send value %r — no notification sent",
+            config.email_failure_send,
+        )
