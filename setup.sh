@@ -24,6 +24,12 @@ conn.close()
 PYEOF
 )
 
+# Validate: must be a plain positive integer
+if ! [[ "$POLL_INTERVAL" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ERROR: poll_interval_minutes is not a positive integer: '${POLL_INTERVAL}'" >&2
+    exit 1
+fi
+
 echo "Poll interval: ${POLL_INTERVAL} minutes"
 
 # Create system user if it does not exist
@@ -55,4 +61,4 @@ systemctl start email-reader.timer
 
 echo ""
 echo "Installation complete."
-systemctl status email-reader.timer --no-pager
+systemctl status email-reader.timer --no-pager || true
