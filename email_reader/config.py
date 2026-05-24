@@ -21,7 +21,7 @@ class AppConfig:
     mark_read: bool
     url_detection_threshold: int
     paywall_text_threshold: int
-    url_blocklist: tuple
+    url_blocklist: tuple[str, ...]
     poll_interval_minutes: int
     email_failure_send: str
     operating_window_start: str
@@ -29,7 +29,7 @@ class AppConfig:
     daily_digest_time: str
 
 
-def load_db_credentials(path: str) -> DbCredentials:
+def load_db_credentials(path: str | Path) -> DbCredentials:
     lines = Path(path).read_text().strip().splitlines()
     if len(lines) != 4:
         raise ValueError(f"Credentials file must have 4 lines, got {len(lines)}")
@@ -37,7 +37,7 @@ def load_db_credentials(path: str) -> DbCredentials:
     return DbCredentials(host=host, port=int(port), user=user, password=password)
 
 
-def load_app_config(params: dict) -> AppConfig:
+def load_app_config(params: dict[str, str]) -> AppConfig:
     raw_blocklist = params.get(
         "url_blocklist", "commonsense-computing.com/efb.html"
     )
