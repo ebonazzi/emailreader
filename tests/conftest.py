@@ -13,6 +13,7 @@ def make_config(**overrides) -> AppConfig:
         url_detection_threshold=500,
         paywall_text_threshold=200,
         url_blocklist=["commonsense-computing.com/efb.html"],
+        subject_line_blocklist=(),
         poll_interval_minutes=30,
         email_failure_send="daily",
         operating_window_start="07:00",

@@ -4,9 +4,9 @@ from pathlib import Path
 from email_reader.config import load_db_credentials, load_app_config, DbCredentials, AppConfig
 
 
-def test_load_db_credentials_parses_4_lines(tmp_path):
+def test_load_db_credentials_parses_key_value(tmp_path):
     f = tmp_path / "creds.txt"
-    f.write_text("myhost\n5432\nmailpoller\nsecret\n")
+    f.write_text("host=myhost\nport=5432\nusername=mailpoller\npassword=secret\n")
     creds = load_db_credentials(str(f))
     assert creds.host == "myhost"
     assert creds.port == 5432
@@ -14,10 +14,25 @@ def test_load_db_credentials_parses_4_lines(tmp_path):
     assert creds.password == "secret"
 
 
-def test_load_db_credentials_rejects_wrong_line_count(tmp_path):
+def test_load_db_credentials_ignores_blank_lines_and_comments(tmp_path):
     f = tmp_path / "creds.txt"
-    f.write_text("onlyoneline\n")
-    with pytest.raises(ValueError, match="4 lines"):
+    f.write_text("# DB credentials\nhost=myhost\n\nport=5432\nusername=mailpoller\npassword=secret\n")
+    creds = load_db_credentials(str(f))
+    assert creds.host == "myhost"
+    assert creds.port == 5432
+
+
+def test_load_db_credentials_rejects_invalid_line(tmp_path):
+    f = tmp_path / "creds.txt"
+    f.write_text("host=myhost\nport=5432\nusername=mailpoller\nbadline\n")
+    with pytest.raises(ValueError, match="key=value"):
+        load_db_credentials(str(f))
+
+
+def test_load_db_credentials_rejects_missing_key(tmp_path):
+    f = tmp_path / "creds.txt"
+    f.write_text("host=myhost\nport=5432\nusername=mailpoller\n")
+    with pytest.raises(ValueError, match="Missing required credential key"):
         load_db_credentials(str(f))
 
 
@@ -53,17 +68,43 @@ def test_load_app_config_mark_read_true():
     assert config.mark_read is True
 
 
-def test_load_app_config_multiline_blocklist():
+def test_load_app_config_pipe_delimited_url_blocklist():
     params = {
         "gmail_client_id": "cid",
         "gmail_client_secret": "csecret",
         "gmail_refresh_token": "rtoken",
         "pdf_output_dir": "/tmp/pdfs",
-        "url_blocklist": "example.com\nspam.org\n",
+        "url_blocklist": "example.com|other.com",
     }
     config = load_app_config(params)
     assert "example.com" in config.url_blocklist
-    assert "spam.org" in config.url_blocklist
+    assert "other.com" in config.url_blocklist
+    assert len(config.url_blocklist) == 2
+
+
+def test_load_app_config_subject_line_blocklist_parsed():
+    params = {
+        "gmail_client_id": "cid",
+        "gmail_client_secret": "csecret",
+        "gmail_refresh_token": "rtoken",
+        "pdf_output_dir": "/tmp/pdfs",
+        "subject_line_blocklist": "unsubscribe|newsletter",
+    }
+    config = load_app_config(params)
+    assert "unsubscribe" in config.subject_line_blocklist
+    assert "newsletter" in config.subject_line_blocklist
+    assert len(config.subject_line_blocklist) == 2
+
+
+def test_load_app_config_subject_line_blocklist_defaults_empty():
+    params = {
+        "gmail_client_id": "cid",
+        "gmail_client_secret": "csecret",
+        "gmail_refresh_token": "rtoken",
+        "pdf_output_dir": "/tmp/pdfs",
+    }
+    config = load_app_config(params)
+    assert config.subject_line_blocklist == ()
 
 
 def test_load_app_config_missing_required_key_raises():

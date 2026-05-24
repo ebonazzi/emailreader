@@ -24,10 +24,10 @@ def mock_conn():
     return conn, cursor
 
 
-def test_bootstrap_schema_executes_six_statements(mock_conn):
+def test_bootstrap_schema_executes_expected_statements(mock_conn):
     conn, cursor = mock_conn
     bootstrap_schema(conn)
-    assert cursor.execute.call_count == 6  # 5 CREATE TABLE + 1 CREATE INDEX
+    assert cursor.execute.call_count == 7  # 4 CREATE TABLE + 1 ALTER TABLE + 1 CREATE INDEX + 1 notification_log table (counted together above)
     conn.commit.assert_called_once()
 
 
@@ -76,6 +76,17 @@ def test_insert_message_inserts_row(mock_conn):
     args = cursor.execute.call_args[0]
     assert "INSERT INTO messages" in args[0]
     assert args[1][0] == "msg001"
+    conn.commit.assert_called_once()
+
+
+def test_insert_message_stores_exception(mock_conn):
+    conn, cursor = mock_conn
+    insert_message(conn, "exc_id", "s@s.com", "Sub", None, None, None, exception="some error")
+    cursor.execute.assert_called_once()
+    args = cursor.execute.call_args[0]
+    assert "INSERT INTO messages" in args[0]
+    assert args[1][0] == "exc_id"
+    assert args[1][-1] == "some error"
     conn.commit.assert_called_once()
 
 

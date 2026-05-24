@@ -36,6 +36,10 @@ def bootstrap_schema(conn: "psycopg2.extensions.connection") -> None:
             )
         """)
         cur.execute("""
+            ALTER TABLE messages
+            ADD COLUMN IF NOT EXISTS exception TEXT
+        """)
+        cur.execute("""
             CREATE INDEX IF NOT EXISTS idx_messages_gmail_id
             ON messages (gmail_message_id)
         """)
@@ -91,18 +95,20 @@ def insert_message(
     sender: str,
     subject: str,
     content_url: str | None,
-    pdf_path: str,
-    pdf_data: bytes,
+    pdf_path: str | None,
+    pdf_data: bytes | None,
+    exception: str | None = None,
 ) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO messages
-                (gmail_message_id, sender, subject, content_url, pdf_path, pdf_data)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                (gmail_message_id, sender, subject, content_url, pdf_path, pdf_data, exception)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (gmail_message_id) DO NOTHING
             """,
             (gmail_message_id, sender, subject, content_url, pdf_path,
-             psycopg2.Binary(pdf_data)),
+             psycopg2.Binary(pdf_data) if pdf_data is not None else None, exception),
         )
     conn.commit()
 

@@ -65,13 +65,16 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-
+    print("DEBUG: main() started", flush=True)  # ADD THIS
+    print(f"DEBUG: sys.argv={sys.argv}", flush=True)  # ADD THIS
     if len(sys.argv) != 2:
         print("Usage: email-reader <path-to-credentials-file>", file=sys.stderr)
         sys.exit(1)
-
+    print("DEBUG: loading credentials", flush=True)  # ADD THIS
     creds = load_db_credentials(sys.argv[1])
+    print(f"DEBUG: creds loaded", flush=True)  # ADD THIS
     conn = connect(creds)
+    print("DEBUG: connected to DB", flush=True)  # ADD THIS
     bootstrap_schema(conn)
     params = load_parameters(conn)
     config = load_app_config(params)
@@ -106,6 +109,7 @@ def main() -> None:
                 sender: str = "unknown"
                 subject: str = ""
                 result = None
+                message_inserted: bool = False
 
                 if message_exists(conn, msg_id):
                     run_logger.log_message(msg_id, "", "", "skipped")
@@ -116,6 +120,12 @@ def main() -> None:
                     message = fetch_message(service, msg_id)
                     sender = get_header(message, "From")
                     subject = get_header(message, "Subject")
+
+                    if any(entry.lower() in subject.lower() for entry in config.subject_line_blocklist):
+                        run_logger.log_message(msg_id, sender, subject, "skipped")
+                        log.info("Skipping %s: subject matches blocklist (%r)", msg_id, subject)
+                        continue
+
                     html_body, cid_map = extract_body_html(message)
 
                     result = detect_content(
@@ -140,6 +150,7 @@ def main() -> None:
 
                         insert_message(conn, msg_id, sender, subject,
                                        result.url, pdf_path, pdf_bytes)
+                        message_inserted = True
 
                         if config.mark_read:
                             mark_as_read(service, msg_id)
@@ -148,6 +159,10 @@ def main() -> None:
                         log.info("Processed %s → %s", msg_id, disposition)
 
                     except RenderError as exc:
+                        _url = result.url if result is not None else None
+                        if not message_inserted:
+                            insert_message(conn, msg_id, sender, subject, _url, None, None, exception=exc.reason)
+                            message_inserted = True
                         failures.append(
                             FailureRecord(
                                 gmail_message_id=msg_id,
@@ -162,6 +177,11 @@ def main() -> None:
 
                 except Exception as exc:
                     _url = result.url if result is not None else None
+                    if not message_inserted:
+                        try:
+                            insert_message(conn, msg_id, sender, subject, _url, None, None, exception=str(exc))
+                        except Exception:
+                            pass  # don't let insert failure mask the original error
                     failures.append(
                         FailureRecord(
                             gmail_message_id=msg_id,
@@ -179,3 +199,6 @@ def main() -> None:
     finally:
         run_logger.finish()
         conn.close()
+
+if __name__ == "__main__":
+    main()
