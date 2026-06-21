@@ -1,6 +1,7 @@
 import logging
 import re
 import sys
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -162,7 +163,7 @@ def main() -> None:
                     except RenderError as exc:
                         _url = result.url if result is not None else None
                         if not message_inserted:
-                            insert_message(conn, msg_id, sender, subject, _url, None, None, exception=exc.reason)
+                            insert_message(conn, msg_id, sender, subject, _url, None, None, exception=traceback.format_exc())
                             message_inserted = True
                         failures.append(
                             FailureRecord(
@@ -180,7 +181,7 @@ def main() -> None:
                     _url = result.url if result is not None else None
                     if not message_inserted:
                         try:
-                            insert_message(conn, msg_id, sender, subject, _url, None, None, exception=str(exc))
+                            insert_message(conn, msg_id, sender, subject, _url, None, None, exception=traceback.format_exc())
                         except psycopg2.Error:
                             pass  # don't let insert failure mask the original error
                     failures.append(
