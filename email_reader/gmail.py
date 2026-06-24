@@ -11,8 +11,6 @@ from googleapiclient.discovery import build
 
 log = logging.getLogger(__name__)
 
-_SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
-
 GmailService = Any  # google.api_core.discovery.Resource
 
 
@@ -26,7 +24,7 @@ def build_gmail_service(client_id: str, client_secret: str, refresh_token: str) 
         token_uri="https://oauth2.googleapis.com/token",
         client_id=client_id,
         client_secret=client_secret,
-        scopes=_SCOPES,
+        scopes=["https://mail.google.com/"],
     )
     try:
         creds.refresh(Request())
