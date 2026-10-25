@@ -1,0 +1,2 @@
+@Library('ci') _
+pythonApp()
