@@ -243,7 +243,9 @@ def test_main_render_error_inserts_exception_record(mock_main_deps):
 
     deps["mock_insert"].assert_called_once()
     kw = deps["mock_insert"].call_args[1]
-    assert kw.get("exception") == "render failed"
+    exc = kw.get("exception")
+    assert exc.startswith("Traceback (most recent call last):")
+    assert exc.rstrip().endswith("email_reader.pdf.RenderError: render failed")
 
 
 def test_main_outer_exception_inserts_exception_record(mock_main_deps):
@@ -257,7 +259,9 @@ def test_main_outer_exception_inserts_exception_record(mock_main_deps):
 
     deps["mock_insert"].assert_called_once()
     kw = deps["mock_insert"].call_args[1]
-    assert kw.get("exception") == "network error"
+    exc = kw.get("exception")
+    assert exc.startswith("Traceback (most recent call last):")
+    assert exc.rstrip().endswith("RuntimeError: network error")
 
 
 def test_main_already_processed_message_is_skipped(mock_main_deps):
